@@ -34,6 +34,17 @@ fn generate_uuid_v4() -> String {
     )
 }
 
+/// Render a full ATC message (name + params) for diagnostics, e.g. a SyncFailed reason.
+fn dump_message(libs: &crate::apple::AppleLibraries, msg: crate::apple::CFDictionaryRef) -> String {
+    let Ok(bytes) = libs.cf_plist_to_bytes(msg as crate::apple::CFPropertyListRef) else {
+        return String::new();
+    };
+    let Ok(value) = plist::Value::from_reader(std::io::Cursor::new(bytes)) else {
+        return String::new();
+    };
+    format!("{:?}", value).chars().take(600).collect()
+}
+
 pub enum SyncEvent {
     Log(String),
     Done(Result<()>),
@@ -192,12 +203,13 @@ where
             }
             let name_ref = unsafe { (libs.at_cf_message_get_name)(msg) };
             let name = libs.to_rust_string(name_ref);
+            let detail = dump_message(&libs, msg);
             unsafe { (libs.cf_release)(msg) };
             if name == "ReadyForSync" {
                 ready_for_sync = true;
                 break;
             }
-            log(&format!("AirTraffic message: {}", name));
+            log(&format!("AirTraffic message: {} {}", name, detail));
             if name == "SyncFailed" || name == "SyncFinished" {
                 bail!("AirTraffic: device ended the sync before ReadyForSync ({})", name);
             }
