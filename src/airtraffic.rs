@@ -179,8 +179,12 @@ where
 
         log("Waiting for ReadyForSync from iPhone...");
         // 4. Wait for ReadyForSync
+        // Newer iOS releases answer the sync request slowly, so wait on a deadline
+        // rather than a fixed poll count, and log whatever the device sends meanwhile.
         let mut ready_for_sync = false;
-        for _ in 0..(20 * retry_scale) {
+        let ready_deadline =
+            std::time::Instant::now() + Duration::from_secs(45 * retry_scale as u64);
+        while std::time::Instant::now() < ready_deadline {
             let msg = unsafe { (libs.at_host_connection_read_message)(conn) };
             if msg.is_null() {
                 sleep(Duration::from_millis(150));
@@ -192,6 +196,10 @@ where
             if name == "ReadyForSync" {
                 ready_for_sync = true;
                 break;
+            }
+            log(&format!("AirTraffic message: {}", name));
+            if name == "SyncFailed" || name == "SyncFinished" {
+                bail!("AirTraffic: device ended the sync before ReadyForSync ({})", name);
             }
         }
         if !ready_for_sync {
